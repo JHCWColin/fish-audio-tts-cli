@@ -4,10 +4,24 @@ use std::env;
 use std::ffi::c_void;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::ptr;
 
 const INSTALL_DIR_NAME: &str = "FishAudioTTS";
 const EMBEDDED_TTS: &[u8] = include_bytes!("../../tts.exe");
+const HKEY_CURRENT_USER: *mut c_void = (-2147483647isize) as *mut c_void;
+const KEY_QUERY_VALUE: u32 = 0x0001;
+const KEY_SET_VALUE: u32 = 0x0002;
+const KEY_READ_WRITE: u32 = KEY_QUERY_VALUE | KEY_SET_VALUE;
+const REG_EXPAND_SZ: u32 = 2;
+
+#[link(name = "advapi32")]
+extern "system" {
+    fn RegOpenKeyExW(key: *mut c_void, subkey: *const u16, options: u32, access: u32, result: *mut *mut c_void) -> i32;
+    fn RegCreateKeyExW(key: *mut c_void, subkey: *const u16, reserved: u32, class: *const u16, options: u32, access: u32, security: *const c_void, result: *mut *mut c_void, disposition: *mut u32) -> i32;
+    fn RegQueryValueExW(key: *mut c_void, value: *const u16, reserved: *mut u32, kind: *mut u32, data: *mut u8, size: *mut u32) -> i32;
+    fn RegSetValueExW(key: *mut c_void, value: *const u16, reserved: u32, kind: u32, data: *const u8, size: u32) -> i32;
+    fn RegCloseKey(key: *mut c_void) -> i32;
+}
 
 #[link(name = "user32")]
 extern "system" {
@@ -32,19 +46,22 @@ fn install_dir() -> PathBuf {
 }
 
 fn query_user_path() -> String {
-    let output = Command::new("reg.exe")
-        .args(["query", r"HKCU\Environment", "/v", "Path"])
-        .output();
-    if let Ok(output) = output {
-        let text = String::from_utf8_lossy(&output.stdout);
-        for line in text.lines() {
-            if let Some(pos) = line.find("REG_") {
-                let value = line[pos..].split_once(char::is_whitespace).map(|(_, rest)| rest.trim()).unwrap_or("");
-                if !value.is_empty() { return value.to_string(); }
-            }
-        }
+    unsafe {
+        let subkey: Vec<u16> = "Environment".encode_utf16().chain(std::iter::once(0)).collect();
+        let value_name: Vec<u16> = "Path".encode_utf16().chain(std::iter::once(0)).collect();
+        let mut key = ptr::null_mut();
+        if RegOpenKeyExW(HKEY_CURRENT_USER, subkey.as_ptr(), 0, KEY_QUERY_VALUE, &mut key) != 0 { return env::var("Path").unwrap_or_default(); }
+        let mut kind = 0u32;
+        let mut bytes = 0u32;
+        let result = RegQueryValueExW(key, value_name.as_ptr(), ptr::null_mut(), &mut kind, ptr::null_mut(), &mut bytes);
+        if result != 0 || bytes < 2 { RegCloseKey(key); return env::var("Path").unwrap_or_default(); }
+        let mut data = vec![0u8; bytes as usize];
+        let result = RegQueryValueExW(key, value_name.as_ptr(), ptr::null_mut(), &mut kind, data.as_mut_ptr(), &mut bytes);
+        RegCloseKey(key);
+        if result != 0 { return env::var("Path").unwrap_or_default(); }
+        let wide: Vec<u16> = data[..bytes as usize].chunks_exact(2).map(|x| u16::from_le_bytes([x[0], x[1]])).take_while(|c| *c != 0).collect();
+        String::from_utf16_lossy(&wide)
     }
-    env::var("Path").unwrap_or_default()
 }
 
 fn same_path(a: &str, b: &Path) -> bool {
@@ -59,10 +76,18 @@ fn update_path(dir: &Path, remove: bool) -> Result<(), String> {
     entries.retain(|entry| !same_path(entry, dir));
     if !remove { entries.push(dir.to_string_lossy().to_string()); }
     let new_path = entries.join(";");
-    let status = Command::new("reg.exe")
-        .args(["add", r"HKCU\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", &new_path, "/f"])
-        .status().map_err(|e| format!("无法更新用户 PATH: {}", e))?;
-    if !status.success() { return Err(format!("reg.exe 更新用户 PATH 失败，退出码 {}", status)); }
+    unsafe {
+        let subkey: Vec<u16> = "Environment".encode_utf16().chain(std::iter::once(0)).collect();
+        let value_name: Vec<u16> = "Path".encode_utf16().chain(std::iter::once(0)).collect();
+        let value: Vec<u16> = new_path.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut key = ptr::null_mut();
+        let mut disposition = 0u32;
+        let result = RegCreateKeyExW(HKEY_CURRENT_USER, subkey.as_ptr(), 0, ptr::null(), 0, KEY_READ_WRITE, ptr::null(), &mut key, &mut disposition);
+        if result != 0 { return Err(format!("无法打开用户环境变量注册表（错误码 {}）", result)); }
+        let result = RegSetValueExW(key, value_name.as_ptr(), 0, REG_EXPAND_SZ, value.as_ptr() as *const u8, (value.len() * 2) as u32);
+        RegCloseKey(key);
+        if result != 0 { return Err(format!("无法写入用户 PATH（错误码 {}）", result)); }
+    }
     Ok(())
 }
 
