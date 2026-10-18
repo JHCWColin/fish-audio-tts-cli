@@ -45,6 +45,12 @@ fn install_dir() -> PathBuf {
         .join(INSTALL_DIR_NAME)
 }
 
+fn profile_install_dir() -> PathBuf {
+    env::var_os("USERPROFILE").map(PathBuf::from)
+        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+        .join(INSTALL_DIR_NAME)
+}
+
 fn query_user_path() -> String {
     unsafe {
         let subkey: Vec<u16> = "Environment".encode_utf16().chain(std::iter::once(0)).collect();
@@ -107,8 +113,17 @@ fn uninstall(dir: &Path) -> Result<String, String> {
 
 fn main() {
     let dir = install_dir();
+    let profile_dir = profile_install_dir();
     let uninstalling = env::args().nth(1).as_deref() == Some("--uninstall");
-    let result = if uninstalling { uninstall(&dir) } else { install(&dir) };
+    let result = if uninstalling {
+        let first = uninstall(&dir);
+        let second = uninstall(&profile_dir);
+        first.and(second)
+    } else {
+        let first = install(&dir);
+        let second = install(&profile_dir);
+        first.and(second).map(|_| format!("已安装两份 tts.exe：\n{}\n{}\n\n两个目录都已加入当前用户 PATH。请重新打开终端后使用 tts 命令。", dir.join("tts.exe").display(), profile_dir.join("tts.exe").display()))
+    };
     match result {
         Ok(text) => message("Fish Audio TTS 安装器", &text, false),
         Err(error) => fail(error),

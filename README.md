@@ -32,7 +32,7 @@ $env:HTTPS_PROXY = "http://127.0.0.1:7890"
 
 ## 安装包
 
-下载 Release 中的 `tts-setup.exe` 并双击运行。它是 Windows GUI 安装器，不会打开控制台窗口；安装完成或失败会显示原生提示框。安装器会把 `tts.exe` 安装到 `%LOCALAPPDATA%\FishAudioTTS`，并自动加入当前用户的 `PATH`；打开新的终端后即可直接运行：
+下载 Release 中的 `tts-setup.exe` 并双击运行。它是 Windows GUI 安装器，不会打开控制台窗口；安装完成或失败会显示原生提示框。安装器会同时把 `tts.exe` 安装到 `%LOCALAPPDATA%\FishAudioTTS` 和 `%USERPROFILE%\FishAudioTTS`（即 `C:\Users\<用户名>\FishAudioTTS`），并将两个目录加入当前用户的 `PATH`；打开新的终端后即可直接运行：
 
 ```powershell
 tts "你好"
