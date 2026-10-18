@@ -30,6 +30,16 @@ $env:HTTPS_PROXY = "http://127.0.0.1:7890"
 
 未设置代理变量时程序使用 Windows 默认网络配置。
 
+## 安装包
+
+下载 Release 中的 `tts-setup.exe` 并运行。安装器会把 `tts.exe` 安装到 `%LOCALAPPDATA%\FishAudioTTS`，并自动加入当前用户的 `PATH`；打开新的终端后即可直接运行：
+
+```powershell
+tts "你好"
+```
+
+安装器支持 `tts-setup.exe --uninstall`，用于移除安装目录并从当前用户 `PATH` 删除该项。
+
 ## 构建
 
 需要安装 Rust 的 `x86_64-pc-windows-msvc` 工具链：

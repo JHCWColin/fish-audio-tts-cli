@@ -1,4 +1,5 @@
 /target/
+installer/target/
 *.mp3
 *.wav
 *.pcm
