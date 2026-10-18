@@ -13,6 +13,7 @@ const DEFAULT_REFERENCE_ID: &str = "79b9954c15f24deeab2319ec5f44f3b0";
 const DEFAULT_MODEL: &str = "s2.1-pro-free";
 const DEFAULT_FORMAT: &str = "mp3";
 const MAX_RESPONSE_BYTES: usize = 100 * 1024 * 1024;
+const WINHTTP_ACCESS_TYPE_NAMED_PROXY: u32 = 3;
 
 const HELP: &str = r#"Fish Audio TTS CLI
 
@@ -33,6 +34,7 @@ const HELP: &str = r#"Fish Audio TTS CLI
   --model MODEL           模型名称（默认: s2.1-pro-free）。
   --output PATH           输出文件路径；默认保存到当前目录并自动生成文件名。
                           已存在的文件不会被覆盖。
+  HTTPS_PROXY             可选 HTTPS 代理，例如 http://127.0.0.1:7890。
   --help, -h, help        显示此帮助，不需要 API Key，也不会联网。
 
 环境变量:
@@ -190,7 +192,14 @@ mod winhttp {
     pub fn post(api_key: &str, model: &str, body: &[u8]) -> Result<(u32, Vec<u8>), String> {
         unsafe {
             let agent = wide("fish-audio-tts/1.0");
-            let session = H(WinHttpOpen(agent.as_ptr(), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
+            let proxy_value = env::var("HTTPS_PROXY").ok().filter(|v| !v.trim().is_empty())
+                .or_else(|| env::var("HTTP_PROXY").ok().filter(|v| !v.trim().is_empty()));
+            let proxy_wide = proxy_value.as_deref().map(wide);
+            let (access_type, proxy_name) = match proxy_wide.as_ref() {
+                Some(proxy) => (WINHTTP_ACCESS_TYPE_NAMED_PROXY, proxy.as_ptr()),
+                None => (WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME),
+            };
+            let session = H(WinHttpOpen(agent.as_ptr(), access_type, proxy_name, WINHTTP_NO_PROXY_BYPASS, 0));
             if session.0.is_null() { return Err(last_error("无法初始化 HTTPS 客户端")); }
             if WinHttpSetTimeouts(session.0, 15_000, 15_000, 30_000, 60_000) == 0 { return Err(last_error("无法设置网络超时")); }
             let host = wide("api.fish.audio");
@@ -264,5 +273,12 @@ fn main() {
     if matches!(first, Some(b'{') | Some(b'[')) { fail("Fish Audio API 返回了 JSON 内容而非音频数据。" ); }
     save_new(&output, &response).unwrap_or_else(|e| fail(e));
     let absolute = fs::canonicalize(&output).unwrap_or(output);
-    println!("{}", absolute.display());
+    let printed = absolute.to_string_lossy();
+    if let Some(normal) = printed.strip_prefix(r"\\?\UNC\") {
+        println!(r"\\{}", normal);
+    } else if let Some(normal) = printed.strip_prefix(r"\\?\") {
+        println!("{}", normal);
+    } else {
+        println!("{}", printed);
+    }
 }

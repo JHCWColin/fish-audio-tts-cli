@@ -21,6 +21,15 @@ setx FISH_API_KEY "你的 Fish Audio API Key"
 
 成功时 stdout 只包含生成文件的绝对路径；失败信息写入 stderr 并返回非零退出码。默认音色为 `79b9954c15f24deeab2319ec5f44f3b0`，默认模型为 `s2.1-pro-free`，默认格式为 `mp3`。支持 `mp3`、`wav`、`pcm` 和 `opus`。输出文件已存在时拒绝覆盖；未指定输出路径时会在当前目录生成唯一文件名。
 
+如果网络环境需要本地代理，可在启动前设置 `HTTPS_PROXY`（或 `HTTP_PROXY`），例如：
+
+```powershell
+$env:HTTPS_PROXY = "http://127.0.0.1:7890"
+.\tts.exe "你好"
+```
+
+未设置代理变量时程序使用 Windows 默认网络配置。
+
 ## 构建
 
 需要安装 Rust 的 `x86_64-pc-windows-msvc` 工具链：
